@@ -81,16 +81,19 @@
       line-height: 0.95;
       margin: 0;
       letter-spacing: 0.01em;
-      background: linear-gradient(180deg, #fff 0%, var(--blush) 55%, var(--rose) 100%);
-      -webkit-background-clip: text;
-      background-clip: text;
-      color: transparent;
-      text-shadow: 0 0 60px rgba(255, 111, 156, 0.25);
+      color: var(--blush); /* fallback if gradient text is unsupported */
+      filter: drop-shadow(0 0 40px rgba(255, 111, 156, 0.35));
     }
+    /* Each letter carries its OWN gradient so it stays visible after the
+       name is split into spans (fixes the flash-then-disappear issue). */
     .name .ltr {
       display: inline-block;
       opacity: 0;
       transform: translateY(40px) rotate(8deg);
+      background: linear-gradient(180deg, #fff 0%, var(--blush) 55%, var(--rose) 100%);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
     }
 
     .greeting {
@@ -267,6 +270,22 @@
       will-change: transform, opacity;
     }
 
+    /* Her name, popping up wherever you click */
+    .click-name {
+      position: fixed;
+      z-index: 6;
+      pointer-events: none;
+      white-space: nowrap;
+      font-family: 'Cormorant Garamond', serif;
+      font-weight: 600;
+      font-size: clamp(2rem, 6vw, 3.6rem);
+      background: linear-gradient(120deg, var(--gold), var(--rose), var(--blush));
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+      filter: drop-shadow(0 4px 20px rgba(255, 111, 156, 0.5));
+    }
+
     /* Accessibility: keyboard focus + reduced motion */
     .burst-btn:focus-visible { outline: 3px solid var(--gold); outline-offset: 3px; }
     @media (prefers-reduced-motion: reduce) {
@@ -358,6 +377,8 @@
 
   <script>
     const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    // ✏️ Her name — read from the <h1>, used on the hearts and on click
+    const GF_NAME = (document.getElementById('name').getAttribute('aria-label') || 'Maryam').trim();
 
     /* =========================================================
        1) THREE.JS — floating 3D hearts + gold sparkles
@@ -401,7 +422,7 @@
 
       const palette = [0xff6f9c, 0xe24a7f, 0xffd6e4, 0xf2c76b, 0xff9ab8];
       const hearts = [];
-      const HEART_COUNT = window.innerWidth < 640 ? 9 : 15;
+      const HEART_COUNT = window.innerWidth < 640 ? 6 : 10;
 
       for (let i = 0; i < HEART_COUNT; i++) {
         const mat = new THREE.MeshStandardMaterial({
@@ -428,6 +449,87 @@
         };
         scene.add(mesh);
         hearts.push(mesh);
+      }
+
+      // --- Floating hearts that carry her name ---
+      const nameHearts = [];
+      const planeGeo = new THREE.PlaneGeometry(3.4, 3.4);
+
+      function drawHeartPath(g, cx, cy, w, h) {
+        const t = h * 0.3;
+        g.beginPath();
+        g.moveTo(cx, cy + t);
+        g.bezierCurveTo(cx, cy, cx - w / 2, cy, cx - w / 2, cy + t);
+        g.bezierCurveTo(cx - w / 2, cy + (h + t) / 2, cx, cy + (h + t) / 2, cx, cy + h);
+        g.bezierCurveTo(cx, cy + (h + t) / 2, cx + w / 2, cy + (h + t) / 2, cx + w / 2, cy + t);
+        g.bezierCurveTo(cx + w / 2, cy, cx, cy, cx, cy + t);
+        g.closePath();
+      }
+
+      function makeNameHeartTexture(name, colA, colB) {
+        const S = 256;
+        const c = document.createElement('canvas');
+        c.width = c.height = S;
+        const g = c.getContext('2d');
+        drawHeartPath(g, S / 2, S * 0.14, S * 0.88, S * 0.74);
+        const grad = g.createLinearGradient(0, 0, 0, S);
+        grad.addColorStop(0, colA);
+        grad.addColorStop(1, colB);
+        g.fillStyle = grad;
+        g.fill();
+        g.lineWidth = 6;
+        g.strokeStyle = 'rgba(255,255,255,0.4)';
+        g.stroke();
+        const fs = name.length > 7 ? 34 : 46;
+        g.font = '600 ' + fs + 'px "Cormorant Garamond", Georgia, serif';
+        g.textAlign = 'center';
+        g.textBaseline = 'middle';
+        g.shadowColor = 'rgba(90,10,45,0.55)';
+        g.shadowBlur = 10;
+        g.fillStyle = '#fff';
+        g.fillText(name, S / 2, S * 0.5);
+        const tex = new THREE.CanvasTexture(c);
+        tex.anisotropy = 4;
+        return tex;
+      }
+
+      const nameColors = [
+        ['#ff8fb3', '#e24a7f'],
+        ['#ffd6e4', '#ff6f9c'],
+        ['#f7d488', '#e2a24a']
+      ];
+
+      function addNameHearts() {
+        const NAME_COUNT = window.innerWidth < 640 ? 5 : 8;
+        for (let i = 0; i < NAME_COUNT; i++) {
+          const cols = nameColors[i % nameColors.length];
+          const mat = new THREE.MeshBasicMaterial({
+            map: makeNameHeartTexture(GF_NAME, cols[0], cols[1]),
+            transparent: true,
+            depthWrite: false
+          });
+          const mesh = new THREE.Mesh(planeGeo, mat);
+          mesh.position.set(
+            (Math.random() - 0.5) * 32,
+            (Math.random() - 0.5) * 26,
+            (Math.random() - 0.5) * 10 + 1
+          );
+          mesh.scale.setScalar(0.7 + Math.random() * 0.9);
+          mesh.userData = {
+            floatSpeed: 0.12 + Math.random() * 0.2,
+            phase: Math.random() * Math.PI * 2,
+            baseX: mesh.position.x
+          };
+          scene.add(mesh);
+          nameHearts.push(mesh);
+        }
+      }
+
+      // Wait for the display font so the name renders in Cormorant, not a fallback
+      if (document.fonts && document.fonts.ready) {
+        document.fonts.ready.then(addNameHearts);
+      } else {
+        addNameHearts();
       }
 
       // --- Gold sparkle particles ---
@@ -478,6 +580,14 @@
           h.position.x = d.baseX + Math.sin(t * 0.5 + d.phase) * 0.8; // gentle sway
           h.rotation.y += d.spin;
           h.rotation.z = Math.PI + Math.sin(t * 0.4 + d.phase) * 0.15;
+        });
+
+        nameHearts.forEach((h) => {
+          const d = h.userData;
+          h.position.y += d.floatSpeed * 0.016;
+          if (h.position.y > 15) h.position.y = -15;
+          h.position.x = d.baseX + Math.sin(t * 0.4 + d.phase) * 0.7;
+          h.rotation.z = Math.sin(t * 0.35 + d.phase) * 0.12;
         });
 
         points.rotation.y = t * 0.02;
@@ -591,7 +701,26 @@
         }
       }
 
+      // Her name pops up wherever you click
+      function spawnName(x, y) {
+        const el = document.createElement('div');
+        el.className = 'click-name';
+        el.textContent = GF_NAME;
+        el.style.left = x + 'px';
+        el.style.top = y + 'px';
+        document.body.appendChild(el);
+        gsap.fromTo(el,
+          { xPercent: -50, yPercent: -50, scale: 0.4, opacity: 0 },
+          { scale: 1.1, opacity: 1, duration: 0.4, ease: 'back.out(2)' }
+        );
+        gsap.to(el, {
+          y: '-=70', opacity: 0, duration: 1.1, delay: 0.5,
+          ease: 'power2.in', onComplete: () => el.remove()
+        });
+      }
+
       document.addEventListener('click', (e) => {
+        spawnName(e.clientX, e.clientY);
         if (reduceMotion) return;
         const n = e.target.closest('#burstBtn') ? 26 : 12;
         burst(e.clientX, e.clientY, n);
